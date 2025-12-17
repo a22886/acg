@@ -1,11 +1,7 @@
-import bpy
-import math
-import sys
-import os
-import time
-def add_fluid(i: int, path):
-    if not os.path.exists(path):
-        return None
+import bpy, math, sys, os, time
+from main import fluid_obj_prefix, rigids_obj_prefix, output_png_prefix, has_fluid, has_rigids
+
+def add_fluid(path):
     bpy.ops.wm.obj_import(filepath=path)
     fluid_mesh = bpy.context.selected_objects[0]
     fluid_material = bpy.data.materials.get("Fluid")
@@ -13,49 +9,35 @@ def add_fluid(i: int, path):
         fluid_mesh.data.materials[0] = fluid_material
     else:
         fluid_mesh.data.materials.append(fluid_material)
-        
-    # Set the alpha value of the fluid material
-    
-    fluid_mesh.rotation_euler = (0, 0, 0) # ensure (x,y,z) equals (x,y,z) in blender
-    return fluid_mesh
-def add_rigid(i: int, path):
-    if not os.path.exists(path):
-        return None
+    fluid_mesh.rotation_euler = (0, 0, 0)
+
+def add_rigid(path):
     bpy.ops.wm.obj_import(filepath=path)
     rigid_mesh = bpy.context.selected_objects[0]    
-    rigid_mesh.rotation_euler = (0, 0, 0) # ensure (x,y,z) equals (x,y,z) in blender
-    return rigid_mesh
+    rigid_mesh.rotation_euler = (0, 0, 0)
 
 def proc_mesh(i: int):
-    # bpy.ops.object.select_all(action='DESELECT')
-    # for obj in bpy.data.objects:
-    #     if obj.type == 'MESH':
-    #         obj.select_set(True)
-    # bpy.ops.object.delete()
     stdout = os.dup(1)
     os.close(1)
     os.open(os.devnull, os.O_WRONLY)
 
-    fluid_mesh = add_fluid(i, sys.argv[4]+str(i)+".obj")
-    rigid_mesh = add_rigid(i, sys.argv[5]+str(i)+".obj")
-    rigid_mesh2 = add_rigid(i, sys.argv[6]+str(i)+".obj")
+    if has_fluid:
+        add_fluid(fluid_obj_prefix + str(i) + ".obj")
+    for j in range(len(has_rigids)):
+        if has_rigids[j]:
+            add_rigid(rigids_obj_prefix[j] + str(i) + ".obj")
     
     bpy.context.scene.render.image_settings.file_format = 'PNG'
-    bpy.context.scene.render.filepath = sys.argv[3]+str(i)
+    bpy.context.scene.render.filepath = output_png_prefix + str(i)
     bpy.ops.render.render(write_still=True)
     os.close(1)
     os.dup(stdout)
     os.close(stdout)
     print(f"Saved {bpy.context.scene.render.filepath}.png at {time.strftime('%H:%M:%S')}")
 
-    if fluid_mesh is not None:
-        bpy.data.meshes.remove(fluid_mesh.data)
-    if rigid_mesh is not None:
-        bpy.data.meshes.remove(rigid_mesh.data)
-    if rigid_mesh2 is not None:
-        bpy.data.meshes.remove(rigid_mesh2.data)
-    # fluid_mesh.select_set(True)
-    # bpy.ops.object.delete()
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH':
+            bpy.data.meshes.remove(obj.data)
 
 def init_bpy():
     # Renderer = render.Render()
@@ -144,10 +126,6 @@ def init_bpy():
     else:
         pass
 
-def main():       
-    init_bpy()
-    for j in range(int(sys.argv[1]), int(sys.argv[2])):
-        proc_mesh(j)
-    
-if __name__ == '__main__':
-    main()
+init_bpy()
+for j in range(int(sys.argv[1]), int(sys.argv[2])):
+    proc_mesh(j)

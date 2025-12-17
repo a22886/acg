@@ -4,8 +4,10 @@ import trimesh
 
 @ti.data_oriented
 class Rigid:
-    def __init__(self, mesh: trimesh.Trimesh, offset = np.array([0.0, 0.0, 0.0]), velocity = np.array([0.0, 0.0, 0.0]), angular_velocity = np.array([0.0, 0.0, 0.0]), gravity = np.array([0.0, -9.8, 0.0]), orientation = np.eye(3), density = 1000.0, fixed = True):
+    def __init__(self, obj_prefix, mesh: trimesh.Trimesh, offset = np.array([0.0, 0.0, 0.0]), velocity = np.array([0.0, 0.0, 0.0]), angular_velocity = np.array([0.0, 0.0, 0.0]), gravity = np.array([0.0, -9.8, 0.0]), orientation = np.eye(3), density = 1000.0, fixed = True):
+        self.obj_prefix = obj_prefix
         cm = mesh.center_mass
+
         self.mesh = mesh.apply_translation(-cm)
         mesh.vertices = mesh.vertices.astype(np.float32)
         mesh.faces = mesh.faces.astype(np.int32)
@@ -13,25 +15,18 @@ class Rigid:
         self.faces = ti.Vector.field(3, dtype=ti.i32, shape=len(mesh.faces))
         self.vertices.from_numpy(mesh.vertices)
         self.faces.from_numpy(mesh.faces)
+
         self.gravity = ti.Vector(gravity)
         self.density = density
-        # self.position = mesh.center_mass + offset
-        # self.make_center()
         self.volume = mesh.volume
         self.mass = self.density * self.volume
-        # self.volume = ti.field(ti.f32, shape=())
-        # self.mass_center_offset = ti.Vector.field(3, dtype=ti.f32, shape=())
-        # self.centralize() # centralize the mesh
         self.inertia_tensor = ti.Matrix(mesh.moment_inertia) * self.density
-        # self.inertia_tensor = self.inertia() # inertia tensor relative to the center of mass with respect to the canonical frame
-        # self.mesh = trimesh.Trimesh(vertices=self.vertices.to_numpy(), faces=self.faces.to_numpy())
-        # self.voxel = None
-        # self.num_particles = 0
-        # self.get_voxel()
-        self.voxel = mesh.voxelized(0.01).fill().points.astype(np.float32)
+
+        self.voxel = np.ascontiguousarray(mesh.voxelized(0.01).fill().points, np.float32)
         self.num_particles = self.voxel.shape[0]
         self.positions = ti.Vector.field(3, dtype=ti.f32, shape=(self.num_particles,))
         self.positions.from_numpy(self.voxel)
+
         self.position = ti.Vector.field(3, dtype=ti.f32, shape=()) # position of the center of mass
         self.velocity = ti.Vector.field(3, dtype=ti.f32, shape=()) # velocity of the center of mass
         self.orientation = ti.Matrix.field(3, 3, dtype=ti.f32, shape=()) # orientation matrix of the body
@@ -40,7 +35,6 @@ class Rigid:
         self.velocity[None] = velocity
         self.orientation[None] = orientation
         self.angular_velocity[None] = angular_velocity
-        # self.collision_threshold = collision_threshold
         self.collision_threshold = 1e-4
         
         self.force = ti.Vector.field(3, dtype=ti.f32, shape=())
@@ -48,8 +42,8 @@ class Rigid:
         self.angular_momentum = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.fixed = fixed
 
-    def write(self, path):
-        with open(path, 'w') as file:
+    def write(self, i):
+        with open(self.obj_prefix + str(i) + ".obj", 'w') as file:
             pos = self.position.to_numpy()
             for v in self.vertices.to_numpy():
                 v2 = v + pos
@@ -93,15 +87,3 @@ class Rigid:
             # Reset forces and torques
             self.force[None] = ti.Vector([0.0, 0.0, 0.0])
             self.torque[None] = ti.Vector([0.0, 0.0, 0.0])
-
-    def get_states(self):
-        velocity = self.velocity.to_numpy()
-        position = self.position.to_numpy()
-        orientation = self.orientation.to_numpy()
-        angular_velocity = self.angular_velocity.to_numpy()
-        return {
-            'velocity': velocity,
-            'position': position,
-            'orientation': orientation,
-            'angular_velocity': angular_velocity
-        }

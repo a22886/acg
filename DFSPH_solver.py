@@ -1,6 +1,7 @@
 from fluid import *
 from rigid import *
-from viscosity import *
+from main import visc_from_shear_func
+visc_from_shear = visc_from_shear_func()
 
 @ti.data_oriented
 class DFSPH_solver:
@@ -13,24 +14,17 @@ class DFSPH_solver:
         self.fn = fluid.num_particles
         # self.rigid = rigid
         self.rigids = rigids
-
+        self.max_k = ti.field(dtype=ti.f32, shape=())
         self.before_sizes = [0]
         self.rn = 0
         for rigid in rigids:
             self.rn += rigid.num_particles
             self.before_sizes.append(self.rn)
         self.nr = len(rigids)
-        
-        # self.rn = 0 if rigid == None else self.rigid.num_particles
-        # if rigid == None:
-        #     self.rigid = Rigid(trimesh.creation.box([0.1, 0.1, 0.1]))
-            
-        # self.max_num_particles = int(self.fn + self.rn)
-        # print("Max number of particles", self.max_num_particles)
         self.tn = self.fn + self.rn
         print(f"Total number of particles: {self.tn} with {self.before_sizes} of length {self.nr}")
 
-        self.grid_size = 2 * self.fluid.grid_size
+        self.grid_size = 0.02
         self.grid_nums = np.array(self.dimensions / self.grid_size).astype(np.int32)
         
         self.idx_to_grid = ti.Vector.field(3, dtype=ti.i32, shape=(self.tn,))
@@ -64,12 +58,6 @@ class DFSPH_solver:
 
         self.p_mass = self.fluid.p_mass
         self.max_v = ti.field(dtype=ti.f32, shape=())
-        print("Container initialized successfully", self.grid_num.shape)
-
-    # @ti.kernel
-    # def set_which_rigid(self, begin: int, end: int, index: int):
-    #     for i in range(begin, end):
-    #         self.which_rigid[i] = index
 
     @ti.kernel
     def get_rigid_pos(self):
@@ -174,11 +162,6 @@ class DFSPH_solver:
             sum_grad_p_k += grad_p_i.norm_sqr()
             self.alpha[p_i] = self.fluid.densities[p_i] / sum_grad_p_k if sum_grad_p_k > 1e-5 else 0.0
         
-    def write(self, dirs, i):
-        self.fluid.positions_to_ply(f"{dirs}ply/fluid{i}.ply")
-        for j in range(len(self.rigids)):
-            self.rigids[j].write(f"{dirs}obj/rigid{j}_{i}.obj")
-            
     @ti.kernel
     def compute_density_derivative(self):
         """
@@ -215,7 +198,10 @@ class DFSPH_solver:
     @ti.kernel
     def update_vel_according_to_k(self):
         for i in range(self.fn):
+            # Strange numerical errors (or large forces?) make kappa abnormally large.
+            self.kappa[i] = min(self.kappa[i], 100.0)
             self.k_a_over_rho[i] = self.kappa[i] * self.alpha[i] / self.fluid.densities[i]
+            self.max_k[None] = max(self.max_k[None], self.kappa[i])
         for i in range(self.fn):
             ret = ti.Vector([0.0, 0.0, 0.0])
             ka_rhoi = self.k_a_over_rho[i]
@@ -241,36 +227,18 @@ class DFSPH_solver:
         for i in range(self.fn):
             error += self.kappa[i] * self.fluid.time_step
         return error / self.fn
-        
-    # def divergence_solver(self):
-    #     self.compute_density_derivative()
-    #     self.compute_k_divergence()
-    #     for _ in range(max(1, self.div_max_it)):
-    #         self.update_vel_according_to_k()
-    #         self.compute_density_derivative()
-    #         self.compute_k_divergence()
-    #         if self.iteration_error_k() <= self.div_max_err:
-    #             break
-    
-    # def density_solver(self):
-    #     self.compute_density_derivative()
-    #     self.compute_k_density()
-    #     for _ in range(max(1, self.den_max_it)):
-    #         self.update_vel_according_to_k()
-    #         self.compute_density_derivative()
-    #         self.compute_k_density()
-    #         if self.iteration_error_k() <= self.den_max_err:
-    #             break
 
     def DFSPH_solver_template(self, compute_k, max_iter, max_err):
         self.compute_density_derivative()
         compute_k()
+        # self.max_k[None] = 0.0
         for _ in range(max(1, max_iter)):
             self.update_vel_according_to_k()
             self.compute_density_derivative()
             compute_k()
             if self.iteration_error_k() <= max_err:
                 break
+        # print(f"self.max_k[None]: {self.max_k[None]}")
     
     @ti.kernel
     def compute_non_pressure_forces(self):

@@ -15,6 +15,7 @@ class Collision_solver:
     
     @ti.kernel
     def is_colliding(self, i: int, j: int) -> bool:
+        return 0
         pass
 
     def compute_collision(self, i, j):
@@ -27,6 +28,3 @@ class Collision_solver:
         for i in range(self.nr):
             for j in range(i + 1, self.nr):
                 self.compute_collision(i, j)
-
-    def write(self, dirs, i):
-        pass

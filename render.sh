@@ -1,19 +1,24 @@
 #!/bin/bash
 set -e
-frames=60
-outdir=output5/
-outvid=output.mp4
-rm -rf "$outdir" "$outvid"
-mkdir -p "$outdir" "$outdir"ply "$outdir"png "$outdir"obj
-python main.py "$frames" "$outdir"
+trap 'if [[ $? -ne 0 ]]; then kill 0; fi' EXIT
+
+frames=$(sed -n 's/^frames *= *\([0-9]*\).*$/\1/p' main.py)
+# frames=46
+fluid_obj_prefix=$(sed -n 's/^fluid_obj_prefix *= *"\(.*\)".*$/\1/p' main.py)
+fluid_ply_prefix=$(sed -n 's/^fluid_ply_prefix *= *"\(.*\)".*$/\1/p' main.py)
+output_png_prefix=$(sed -n 's/^output_png_prefix *= *"\(.*\)".*$/\1/p' main.py)
+output_video=$(sed -n 's/^output_video *= *"\(.*\)".*$/\1/p' main.py)
+
+python main.py
+
 echo "Started reconstructing at " $(date +%X)
-pysplashsurf reconstruct "$outdir"ply/fluid{}.ply -o "$outdir"obj/fluid{}.obj -s=0 -e=$((frames-1)) -n=$(nproc) -r=0.01 -l=3.5 -c=0.5 -q
+pysplashsurf reconstruct "${fluid_ply_prefix}{}.ply" -o "$fluid_obj_prefix"{}.obj -s=0 -e=$((frames-1)) -n=$(nproc) -r=0.01 -l=3.5 -c=0.5 -q
 echo "Finished reconstructing at " $(date +%X)
-# python render.py "$outdir"fluid "$outdir" 0 $frames
+
 for i in {0..4}; do
-    python render.py $((i*frames/5)) $(((i+1)*frames/5)) "$outdir"png/ "$outdir"obj/fluid "$outdir"obj/rigid0_ "$outdir"obj/rigid1_ &
+    python render.py $((i*frames/5)) $(((i+1)*frames/5)) &
 done
 wait
-# rm -rf output.mp4
-ffmpeg -loglevel quiet -framerate 30 -i "$outdir"png/%d.png -c:v libx264 -pix_fmt yuv420p -vframes $frames "$outvid"
+
+ffmpeg -loglevel quiet -framerate 30 -i "$output_png_prefix"%d.png -c:v libx264 -pix_fmt yuv420p -vframes "$frames" "$output_video"
 

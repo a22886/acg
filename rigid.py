@@ -9,12 +9,18 @@ class Rigid:
         cm = mesh.center_mass
 
         self.mesh = mesh.apply_translation(-cm)
-        mesh.vertices = mesh.vertices.astype(np.float32)
-        mesh.faces = mesh.faces.astype(np.int32)
+        trimesh.repair.fix_normals(self.mesh)
+        # mesh.vertices = mesh.vertices.astype(np.float32)
+        # mesh.faces = mesh.faces.astype(np.int32)
         self.vertices = ti.Vector.field(3, dtype=ti.f32, shape=len(mesh.vertices))
         self.faces = ti.Vector.field(3, dtype=ti.i32, shape=len(mesh.faces))
+        self.normals = ti.Vector.field(3, dtype=ti.f32, shape=len(mesh.faces))
         self.vertices.from_numpy(mesh.vertices)
         self.faces.from_numpy(mesh.faces)
+        self.normals.from_numpy(mesh.face_normals)
+        # for i in range(self.faces.shape[0]):
+        #     print(self.normals[i][0], self.normals[i][1], self.normals[i][2])
+        # print(f"Total {self.faces.shape[0]} normals")
 
         self.gravity = ti.Vector(gravity)
         self.density = density
@@ -26,6 +32,9 @@ class Rigid:
         self.num_particles = self.voxel.shape[0]
         self.positions = ti.Vector.field(3, dtype=ti.f32, shape=(self.num_particles,))
         self.positions.from_numpy(self.voxel)
+        # for i in range(self.positions.shape[0]):
+        #     if(self.positions[i][1] < -0.09):
+        #         print(i)
 
         self.position = ti.Vector.field(3, dtype=ti.f32, shape=()) # position of the center of mass
         self.velocity = ti.Vector.field(3, dtype=ti.f32, shape=()) # velocity of the center of mass
@@ -45,10 +54,11 @@ class Rigid:
     def write(self, i):
         with open(self.obj_prefix + str(i) + ".obj", 'w') as file:
             pos = self.position.to_numpy()
-            for v in self.vertices.to_numpy():
-                v2 = v + pos
+            orient = self.orientation.to_numpy()
+            for v in self.mesh.vertices:
+                v2 = orient @ v + pos
                 file.write(f"v {v2[0]:.6f} {v2[1]:.6f} {v2[2]:.6f}\n")
-            for f in self.faces.to_numpy():
+            for f in self.mesh.faces:
                 file.write(f"f {f[0]+1} {f[1]+1} {f[2]+1}\n")
 
     @ti.func

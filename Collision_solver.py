@@ -1,5 +1,4 @@
 from rigid import *
-import time
 @ti.data_oriented
 class Collision_solver:
     def __init__(self, rigids: list[Rigid], threshold):
@@ -64,12 +63,12 @@ class Collision_solver:
                             point += pos_j
                             normal += nm
                     if num != 0:
-                        print("---------------------------------------------")
-                        print(t, i, j)
-                        print(point/num, normal/num, num)
+                        # print("---------------------------------------------")
+                        # print(t, i, j)
+                        # print(point/num, normal/num, num)
                         point /= num
                         normal /= num
-                        # if ri.fixed:
+                        # print(f"Collision at {point} with normal {normal} between rigids {i} and {j}")
                         RHS = 2 * ti.math.dot(vi - vel + ti.math.cross(angvi, point - pi) - ti.math.cross(ang_v, point - pos), normal)
                         inertia_i = ri.inertia_tensor
                         inertia_j = (orient @ rj.inertia_tensor @ orient.transpose()).inverse()

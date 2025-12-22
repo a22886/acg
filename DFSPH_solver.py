@@ -58,6 +58,7 @@ class DFSPH_solver:
 
         self.p_mass = self.fluid.p_mass
         self.max_v = ti.field(dtype=ti.f32, shape=())
+        self.max_non_gravity_force = ti.field(dtype=ti.f32, shape=())
 
     @ti.kernel
     def get_rigid_pos(self):
@@ -93,7 +94,6 @@ class DFSPH_solver:
     
     @ti.kernel
     def set_boundary_conditions(self):
-        # make sure the particles are inside the domain
         left = self.center - self.dimensions / 2 + self.h
         right = self.center + self.dimensions / 2 - self.h
         self.max_v[None] = 0.0
@@ -109,12 +109,12 @@ class DFSPH_solver:
                     cn[i] -= 1.0
 
             cn_ns = cn.norm_sqr()
-            if cn_ns > 1e-6:
+            if cn_ns > 0.5:
                 recover_coef = 0.3
                 self.fluid.velocities[p_i] -= (1 + recover_coef) * ti.math.dot(self.fluid.velocities[p_i], cn) * cn / cn_ns
                 # self.simulate_collisions(
                 #         p_i, collision_normal / collision_normal_length)
-            self.max_v[None] = max(self.max_v[None], self.fluid.velocities[p_i].norm())
+            # self.max_v[None] = max(self.max_v[None], self.fluid.velocities[p_i].norm())
     
     @ti.kernel
     def compute_N_rho_alpha(self):
@@ -122,18 +122,17 @@ class DFSPH_solver:
             self.grid[int(x), int(y), int(z)].deactivate()
             self.grid_num[x, y, z] = 0
         for i in range(self.fn):
-            self.neighbour_num[int(i)] = 0
-            # self.neighbour[int(i)].deactivate()
             self.mj_nablaWij[int(i)].deactivate()
-            # self.mn_vij[int(i)].deactivate()
+            self.neighbour_num[int(i)] = 0
         for p_i in range(self.tn):
             pos = self.pos(p_i) - self.center + self.dimensions / 2
             x_id = int(pos[0] / self.grid_size)
             y_id = int(pos[1] / self.grid_size)
             z_id = int(pos[2] / self.grid_size)
-            self.grid[x_id, y_id, z_id].append(p_i)
-            self.grid_num[x_id, y_id, z_id] += 1
-            self.idx_to_grid[p_i] = ti.Vector([x_id, y_id, z_id])
+            if 0 <= x_id < self.grid_nums[0] and 0 <= y_id < self.grid_nums[1] and 0 <= z_id < self.grid_nums[2]:
+                self.grid[x_id, y_id, z_id].append(p_i)
+                self.grid_num[x_id, y_id, z_id] += 1
+                self.idx_to_grid[p_i] = ti.Vector([x_id, y_id, z_id])
         for p_i in range(self.fn):
             grid_idx = self.idx_to_grid[p_i]
             ret = 0.0
@@ -155,7 +154,7 @@ class DFSPH_solver:
                             ret += self.p_mass * self.fluid.kernel_func(r_len)
                             grad_p_i += mj_nij
                             if p_j < self.fn:
-                                st += self.fluid.surface_tension * r * self.fluid.kernel_func(r_len)
+                                st += self.fluid.surface_tension * r * self.fluid.kernel_func(max(r_len, self.fluid.particle_diameter))
                                 sum_grad_p_k += mj_nij.norm_sqr()
             self.fluid.densities[p_i] = ret
             self.surf_tens[p_i] = st * self.p_mass
@@ -198,8 +197,6 @@ class DFSPH_solver:
     @ti.kernel
     def update_vel_according_to_k(self):
         for i in range(self.fn):
-            # Strange numerical errors (or large forces?) make kappa abnormally large.
-            self.kappa[i] = min(self.kappa[i], 100.0)
             self.k_a_over_rho[i] = self.kappa[i] * self.alpha[i] / self.fluid.densities[i]
             self.max_k[None] = max(self.max_k[None], self.kappa[i])
         for i in range(self.fn):
@@ -255,7 +252,7 @@ class DFSPH_solver:
                 r = pos_i - self.pos(p_j)
                 v_xy = ti.math.dot(v_i - self.vel(p_j), r)
                 # viscosity_force = 2 * 5 * visc_i * mn / den_i / (r.norm_sqr() + 0.01 * self.h ** 2) * v_xy
-                viscosity_force = visc_i * mn / (r.norm_sqr() + 0.01 * self.h ** 2) * v_xy
+                viscosity_force = visc_i * mn / (max(r.norm(), self.fluid.particle_diameter)**2) * v_xy
                 ret += viscosity_force
                 if p_j >= self.fn:
                     p_j -= self.fn
@@ -265,6 +262,7 @@ class DFSPH_solver:
                         if self.before_sizes[ind] <= p_j < self.before_sizes[ind + 1]:
                             self.rigids[ind].apply_force(-viscosity_force, pos_j)
             self.fluid.forces[i] = (ret - self.surf_tens[i])
+            # self.max_non_gravity_force[None] = max(self.fluid.forces[i].norm(), self.max_non_gravity_force[None])
 
     @ti.func
     def out_prod(self, a, b):
@@ -315,11 +313,8 @@ class DFSPH_solver:
         self.DFSPH_solver_template(self.compute_k_density, self.den_max_it, self.den_max_err)
         
         self.fluid.update_position()
-        for j in ti.static(range(self.nr)):
-            self.rigids[j].update(self.fluid.time_step)
         self.set_boundary_conditions()
         
         self.compute_N_rho_alpha()
         # self.divergence_solver()
         self.DFSPH_solver_template(self.compute_k_divergence, self.div_max_it, self.div_max_err)
-    

@@ -1,8 +1,6 @@
 import taichi as ti
 import trimesh
 import numpy as np
-# from ..utils import *
-import time
 
 @ti.data_oriented
 class Fluid:

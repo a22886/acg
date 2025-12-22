@@ -3,7 +3,6 @@ set -e
 trap 'if [[ $? -ne 0 ]]; then kill 0; fi' EXIT
 
 frames=$(sed -n 's/^frames *= *\([0-9]*\).*$/\1/p' main.py)
-# frames=46
 has_fluid=$(sed -n 's/^has_fluid *= *\(True\|False\).*$/\1/p' main.py)
 fluid_obj_prefix=$(sed -n 's/^fluid_obj_prefix *= *"\(.*\)".*$/\1/p' main.py)
 fluid_ply_prefix=$(sed -n 's/^fluid_ply_prefix *= *"\(.*\)".*$/\1/p' main.py)

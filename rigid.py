@@ -4,9 +4,11 @@ import trimesh
 
 @ti.data_oriented
 class Rigid:
-    def __init__(self, obj_prefix, mesh: trimesh.Trimesh, offset = np.array([0.0, 0.0, 0.0]), velocity = np.array([0.0, 0.0, 0.0]), angular_velocity = np.array([0.0, 0.0, 0.0]), gravity = np.array([0.0, -9.8, 0.0]), orientation = np.eye(3), density = 1000.0, fixed = True):
+    def __init__(self, obj_prefix, mesh: trimesh.Trimesh, offset = np.array([0.0, 0.0, 0.0]), velocity = np.array([0.0, 0.0, 0.0]), angular_velocity = np.array([0.0, 0.0, 0.0]), gravity = np.array([0.0, -9.8, 0.0]), orientation = np.eye(3), density = 1000.0, fixed = True, trajectory = None):
         self.obj_prefix = obj_prefix
         cm = mesh.center_mass
+        self.traj = trajectory
+        self.t = ti.field(dtype=ti.f32, shape=())
 
         self.mesh = mesh.apply_translation(-cm)
         trimesh.repair.fix_normals(self.mesh)
@@ -66,34 +68,43 @@ class Rigid:
         self.force[None] += force
         self.torque[None] += ti.math.cross(pos - self.position[None], force)
 
-    @ti.kernel
+    # @ti.kernel
     def update(self, time_step: ti.f32):
         if not self.fixed:
-            acceleration = self.force[None] / self.mass
-            self.velocity[None] += (acceleration + self.gravity) * time_step
-            self.position[None] += self.velocity[None] * time_step
+            self.update_pos_unfixed(time_step)
+        elif self.traj != None:
+            epsilon = 1e-5
+            self.position[None] += self.traj(self.t[None] + time_step) - self.traj(self.t[None])
+            self.t[None] += time_step
+            self.velocity[None] = (self.traj(self.t[None] + epsilon) - self.traj(self.t[None])) / epsilon
 
-            # Angular motion
-            # angular_acceleration = self.torque[None] / self.mass  # Simplified, should use inertia tensor
-            inertia_tensor_now = self.orientation[None] @ self.inertia_tensor @ self.orientation[None].transpose() # inertia tensor relative to the center of mass with respect to the current frame
-            self.angular_momentum[None] = inertia_tensor_now @ self.angular_velocity[None]
-            torque = self.torque[None] - ti.math.cross(self.angular_velocity[None], self.angular_momentum[None])
-            angular_acceleration = inertia_tensor_now.inverse() @ torque
-            self.angular_velocity[None] += angular_acceleration * time_step
-            angular_velocity_norm = self.angular_velocity[None].norm()
-            exp_A = ti.Matrix.identity(ti.f32, 3)
-            # print(angular_velocity_norm)
-            if angular_velocity_norm > 1e-8:
-                angular_velocity_matrix = ti.Matrix([
-                    [0, -self.angular_velocity[None][2], self.angular_velocity[None][1]],
-                    [self.angular_velocity[None][2], 0, -self.angular_velocity[None][0]],
-                    [-self.angular_velocity[None][1], self.angular_velocity[None][0], 0]
-                ]) / angular_velocity_norm
+    @ti.kernel
+    def update_pos_unfixed(self, time_step: ti.f32):
+        acceleration = self.force[None] / self.mass
+        self.velocity[None] += (acceleration + self.gravity) * time_step
+        self.position[None] += self.velocity[None] * time_step
 
-                exp_A = ti.Matrix.identity(ti.f32, 3) + angular_velocity_matrix * ti.sin(angular_velocity_norm * time_step) + angular_velocity_matrix @ angular_velocity_matrix * (1 - ti.cos(angular_velocity_norm * time_step))
-            # print(exp_A)
-            self.orientation[None] = exp_A @ self.orientation[None]
+        # Angular motion
+        # angular_acceleration = self.torque[None] / self.mass  # Simplified, should use inertia tensor
+        inertia_tensor_now = self.orientation[None] @ self.inertia_tensor @ self.orientation[None].transpose() # inertia tensor relative to the center of mass with respect to the current frame
+        self.angular_momentum[None] = inertia_tensor_now @ self.angular_velocity[None]
+        torque = self.torque[None] - ti.math.cross(self.angular_velocity[None], self.angular_momentum[None])
+        angular_acceleration = inertia_tensor_now.inverse() @ torque
+        self.angular_velocity[None] += angular_acceleration * time_step
+        angular_velocity_norm = self.angular_velocity[None].norm()
+        exp_A = ti.Matrix.identity(ti.f32, 3)
+        # print(angular_velocity_norm)
+        if angular_velocity_norm > 1e-8:
+            angular_velocity_matrix = ti.Matrix([
+                [0, -self.angular_velocity[None][2], self.angular_velocity[None][1]],
+                [self.angular_velocity[None][2], 0, -self.angular_velocity[None][0]],
+                [-self.angular_velocity[None][1], self.angular_velocity[None][0], 0]
+            ]) / angular_velocity_norm
 
-            # Reset forces and torques
-            self.force[None] = ti.Vector([0.0, 0.0, 0.0])
-            self.torque[None] = ti.Vector([0.0, 0.0, 0.0])
+            exp_A = ti.Matrix.identity(ti.f32, 3) + angular_velocity_matrix * ti.sin(angular_velocity_norm * time_step) + angular_velocity_matrix @ angular_velocity_matrix * (1 - ti.cos(angular_velocity_norm * time_step))
+        # print(exp_A)
+        self.orientation[None] = exp_A @ self.orientation[None]
+
+        # Reset forces and torques
+        self.force[None] = ti.Vector([0.0, 0.0, 0.0])
+        self.torque[None] = ti.Vector([0.0, 0.0, 0.0])

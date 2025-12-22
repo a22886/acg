@@ -1,4 +1,4 @@
-import bpy, math, sys, os, time
+import bpy, sys, os, time
 from main import fluid_obj_prefix, rigids_obj_prefix, output_png_prefix, has_fluid, has_rigids
 
 def add_fluid(path):
@@ -13,7 +13,12 @@ def add_fluid(path):
 
 def add_rigid(path):
     bpy.ops.wm.obj_import(filepath=path)
-    rigid_mesh = bpy.context.selected_objects[0]    
+    rigid_mesh = bpy.context.selected_objects[0]  
+    rigid_material = bpy.data.materials.get("Rigid")
+    if rigid_mesh.data.materials:
+        rigid_mesh.data.materials[0] = rigid_material
+    else:
+        rigid_mesh.data.materials.append(rigid_material)
     rigid_mesh.rotation_euler = (0, 0, 0)
 
 def proc_mesh(i: int):
@@ -40,12 +45,11 @@ def proc_mesh(i: int):
             bpy.data.meshes.remove(obj.data)
 
 def init_bpy():
-    # Renderer = render.Render()
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
     
     # Create a new camera
-    bpy.ops.object.camera_add(align='WORLD', location=[-3+0.87-0.4-0.433*2, 3.8-0.9+0.5*2-0.2, 1-1.5+0.75*2], rotation=(math.radians(-30),math.radians(-30),0))
+    bpy.ops.object.camera_add(align='WORLD', location=[-2,4,8], rotation=(-0.471, -0.227, 0))
     camera = bpy.context.object
     bpy.context.scene.camera = camera
     
@@ -56,35 +60,25 @@ def init_bpy():
     nodes = node_tree.nodes
     links = node_tree.links
 
-    # Clear default nodes
     for node in nodes:
         nodes.remove(node)
 
-    # Add Background node
     bg_node = nodes.new(type='ShaderNodeBackground')
     bg_node.location = (200, 0)
     bg_node.inputs['Color'].default_value = (0,0,0,1)
 
-    # Add Environment Texture node
-    # env_texture_node = nodes.new(type='ShaderNodeTexEnvironment')
-    # env_texture_node.location = (-200, 0)
-    # env_texture_node.image = bpy.data.images.load('background.hdr')
-    
-    # Add Output node
     output_node = nodes.new(type='ShaderNodeOutputWorld')
     output_node.location = (400, 0)
     
-    # Link nodes
-    # links.new(env_texture_node.outputs['Color'], bg_node.inputs['Color'])
     links.new(bg_node.outputs['Background'], output_node.inputs['Surface'])
 
     bg_node.inputs["Color"].default_value = (0.52, 0.8, 0.98, 1)  # RGBA (Blueish tone)
     bg_node.inputs["Strength"].default_value = 1.0  # Set the strength
 
     # Create a new light source
-    bpy.ops.object.light_add(type='POINT', location=(4,0,4))
+    bpy.ops.object.light_add(type='POINT', location=(5, 7, 5))
     light = bpy.context.object
-    light.data.energy = 2000
+    light.data.energy = 1000
 
     bpy.context.scene.render.engine = 'CYCLES'
     bpy.context.scene.cycles.samples = 16
@@ -125,6 +119,12 @@ def init_bpy():
         fluid_material.shadow_method = 'HASHED'    # Set shadow method
     else:
         pass
+
+    rigid_material = bpy.data.materials.new(name="Rigid")
+    rigid_material.use_nodes = True
+    bsdf = rigid_material.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = (0.486, 0.988, 0.0, 1.0)  # RGBA for yellow
 
 init_bpy()
 for j in range(int(sys.argv[1]), int(sys.argv[2])):

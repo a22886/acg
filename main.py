@@ -16,11 +16,11 @@ os.makedirs(os.path.dirname(output_png_prefix), exist_ok=True)
 for p in rigids_obj_prefix:
     os.makedirs(os.path.dirname(p), exist_ok=True)
 
-# Indicators: must match the objects in init_scene(), used in render.py
+# Indicators: must match the parameters of Scene(), used in render.py
 # whether you want to render the fluid data
 has_fluid = True
 # whether you want to render the corresponding rigid data
-has_rigids = [True, True, True]
+has_rigids = [False, False, False]
 
 def visc_from_shear_func():
     import taichi as ti

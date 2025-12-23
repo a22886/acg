@@ -1,25 +1,14 @@
 import bpy, sys, os, time
 from main import fluid_obj_prefix, rigids_obj_prefix, output_png_prefix, has_fluid, has_rigids
 
-def add_fluid(path):
+def add_mesh(path, material):
     bpy.ops.wm.obj_import(filepath=path)
-    fluid_mesh = bpy.context.selected_objects[0]
-    fluid_material = bpy.data.materials.get("Fluid")
-    if fluid_mesh.data.materials:
-        fluid_mesh.data.materials[0] = fluid_material
+    mesh = bpy.context.selected_objects[0]  
+    if mesh.data.materials:
+        mesh.data.materials[0] = material
     else:
-        fluid_mesh.data.materials.append(fluid_material)
-    fluid_mesh.rotation_euler = (0, 0, 0)
-
-def add_rigid(path):
-    bpy.ops.wm.obj_import(filepath=path)
-    rigid_mesh = bpy.context.selected_objects[0]  
-    rigid_material = bpy.data.materials.get("Rigid")
-    if rigid_mesh.data.materials:
-        rigid_mesh.data.materials[0] = rigid_material
-    else:
-        rigid_mesh.data.materials.append(rigid_material)
-    rigid_mesh.rotation_euler = (0, 0, 0)
+        mesh.data.materials.append(material)
+    mesh.rotation_euler = (0, 0, 0)
 
 def proc_mesh(i: int):
     stdout = os.dup(1)
@@ -27,10 +16,10 @@ def proc_mesh(i: int):
     os.open(os.devnull, os.O_WRONLY)
 
     if has_fluid:
-        add_fluid(fluid_obj_prefix + str(i) + ".obj")
+        add_mesh(fluid_obj_prefix + str(i) + ".obj", bpy.data.materials.get("Fluid"))
     for j in range(len(has_rigids)):
         if has_rigids[j]:
-            add_rigid(rigids_obj_prefix[j] + str(i) + ".obj")
+            add_mesh(rigids_obj_prefix[j] + str(i) + ".obj", bpy.data.materials.get("Rigid"))
     
     bpy.context.scene.render.image_settings.file_format = 'PNG'
     bpy.context.scene.render.filepath = output_png_prefix + str(i)

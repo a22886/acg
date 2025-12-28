@@ -9,6 +9,8 @@ fluid_ply_prefix=$(sed -n 's/^fluid_ply_prefix *= *"\(.*\)".*$/\1/p' main.py)
 output_png_prefix=$(sed -n 's/^output_png_prefix *= *"\(.*\)".*$/\1/p' main.py)
 output_video=$(sed -n 's/^output_video *= *"\(.*\)".*$/\1/p' main.py)
 
+echo "Started simulation at " $(date +%X)
+
 python main.py
 
 if [ "$has_fluid" == "True" ]; then

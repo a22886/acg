@@ -2,12 +2,12 @@ import taichi as ti
 import trimesh
 import numpy as np
 
+
 @ti.data_oriented
 class Fluid:
-    def __init__(self, ply_prefix, mesh: trimesh.Trimesh,
-                 center=[0.0, 0.0, 0.0],
-                 gravity=[0.0, -9.8, 0.0], rest_density=1000.0,
-                 time_step=1e-4):
+    def __init__(
+        self, ply_prefix="", mesh: trimesh.Trimesh = None, center=[0.0, 0.0, 0.0], gravity=[0.0, -9.8, 0.0], rest_density=1000.0, time_step=1e-4
+    ):
         self.ply_prefix = ply_prefix
 
         self.gravity = ti.Vector.field(3, dtype=ti.f32, shape=())
@@ -19,16 +19,14 @@ class Fluid:
         self.h = 0.04
         self.surface_tension = 0.01
         self.particle_diameter = 0.02
-        
+
         self.volume[None] = mesh.volume
-        
+
         mesh.apply_translation(center)
         voxel = np.ascontiguousarray(mesh.voxelized(0.01).fill().points, np.float32)
-        print(np.max(voxel, axis=0), np.min(voxel, axis=0))
         num_particles = voxel.shape[0]
         self.positions = ti.Vector.field(3, dtype=ti.f32, shape=(num_particles,))
         self.positions.from_numpy(voxel)
-        print(f"Number of particles: {num_particles}")
 
         self.num_particles = num_particles
         self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=num_particles)
@@ -38,7 +36,7 @@ class Fluid:
 
         self.init_velocity_and_density()
         self.p_mass = self.volume[None] / self.num_particles * self.rest_density
-        print("Fluid initialized successfully")    
+        print(f"Initialized fluid with {self.num_particles} particles")
 
     @ti.func
     def kernel_func(self, r):
@@ -48,7 +46,7 @@ class Fluid:
         if q <= 0.5:
             ret = k * (6 * q**3 - 6 * q**2 + 1)
         elif q <= 1.0:
-            ret = 2 * k * (1 - q)**3
+            ret = 2 * k * (1 - q) ** 3
         return ret
 
     @ti.func
@@ -62,32 +60,27 @@ class Fluid:
             if q <= 0.5:
                 ret = vec_k * q * (3 * q - 2) / self.h
             elif q <= 1.0:
-                ret = -vec_k * (1 - q)**2 / self.h
+                ret = -vec_k * (1 - q) ** 2 / self.h
         return ret
-        
+
     @ti.kernel
     def init_velocity_and_density(self):
         for i in range(self.num_particles):
             self.velocities[i] = ti.Vector([0.0, 0.0, 0.0])
             self.densities[i] = self.rest_density
-            # self.viscosity[i] = viscosity.visc_from_shear(0.0)   
+            # self.viscosity[i] = viscosity.visc_from_shear(0.0)
 
     def write(self, i):
-        with open(self.ply_prefix + str(i) + ".ply", 'w') as f:
-            f.write(f'ply\nformat ascii 1.0\nelement vertex {self.num_particles}\nproperty float x\nproperty float y\nproperty float z\nend_header\n')
+        with open(self.ply_prefix + str(i) + ".ply", "w") as f:
+            f.write(f"ply\nformat ascii 1.0\nelement vertex {self.num_particles}\nproperty float x\nproperty float y\nproperty float z\nend_header\n")
             for pos in self.positions.to_numpy():
-                f.write(f'{pos[0]:.6f} {pos[1]:.6f} {pos[2]:.6f}\n')
-    
+                f.write(f"{pos[0]:.6f} {pos[1]:.6f} {pos[2]:.6f}\n")
+
     @ti.kernel
     def update_velocity(self):
         for i in range(self.num_particles):
             self.velocities[i] += self.time_step * (self.forces[i] / self.p_mass + self.gravity[None])
-        # avg_velocity = ti.Vector([0.0, 0.0, 0.0])
-        # for i in range(self.num_particles):
-        #     avg_velocity += self.velocities[i]
-        # avg_velocity /= self.num_particles
-        # print(avg_velocity)
-    
+
     @ti.kernel
     def update_position(self):
         for i in range(self.num_particles):
